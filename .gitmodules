@@ -1,0 +1,3 @@
+[submodule "zncc"]
+	path = zncc
+	url = https://github.com/theunafraid/zncc.git
