@@ -4,3 +4,6 @@
 [submodule "sndfile-tools"]
 	path = sndfile-tools
 	url = https://github.com/theunafraid/sndfile-tools.git
+[submodule "ring-span-line"]
+	path = ring-span-line
+	url = https://github.com/theunafraid/ring-span-lite.git
