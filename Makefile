@@ -50,7 +50,7 @@ lib: configure_sndtool sndtool.o zncc.o howl.o
 	ar rcs libhowl.a $(SNDTOOL_OBJFILES) $(HOWL_OBJFILES) $(ZNCC_OBJFILES)
 
 test1:
-	g++ -I./lib -I/usr/local/include test/main.cpp libhowl.a $(LDFLAGS) -lsdl2 -o test/howl
+	g++ -I./lib -std=c++11 -I$(INCLUDE_RINGSPAN) -I/usr/local/include test/main.cpp libhowl.a $(LDFLAGS) -lsdl2 -o test/howl
 
 clean:
 	rm -f $(ZNCC_DIR)/*.o
