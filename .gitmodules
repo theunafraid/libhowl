@@ -7,3 +7,6 @@
 [submodule "ring-span-line"]
 	path = ring-span-line
 	url = https://github.com/theunafraid/ring-span-lite.git
+[submodule "libsoundio"]
+	path = libsoundio
+	url = https://github.com/andrewrk/libsoundio.git
