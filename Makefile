@@ -14,16 +14,20 @@ SNDTOOL_DIR		:= ./sndfile-tools
 INCLUDE_SNDTOOL := $(SNDTOOL_DIR)/include
 SRC_SNDTOOL		:= $(SNDTOOL_DIR)/src
 
+KFR_DIR			:= $(SNDTOOL_DIR)/kfr/build/kfrlib
+
 ZNCC_DIR		:= ./zncc
 
+SOUNDIO_DIR		:= ./libsoundio
+
 CC				:= cc
-CFLAGS			:= -Wall -I$(INCLUDE_SNDTOOL) $(INCLUDES) -I$(SRC_SNDTOOL) -DSPECTROGRAM_LIB
-CXXFLAGS		:= -Wall -I$(INCLUDE_SNDTOOL) -I$(ZNCC_DIR) $(INCLUDES) -I. -I$(INCLUDE_RINGSPAN) -O3 -g -std=gnu++11 -pthread -DGPU_SUPPORT -DSPECTROGRAM_LIB
+CFLAGS			:= -Wall -I$(INCLUDE_SNDTOOL) -I$(KFR_DIR)/include $(INCLUDES) -I$(SRC_SNDTOOL) -std=c11 -DSPECTROGRAM_LIB
+CXXFLAGS		:= -Wall -I$(INCLUDE_SNDTOOL) -I$(KFR_DIR)/include -I$(ZNCC_DIR) $(INCLUDES) -I. -I$(INCLUDE_RINGSPAN) -O3 -g -std=gnu++11 -pthread -DGPU_SUPPORT -DSPECTROGRAM_LIB
 
 OS				:=$(shell uname)
 
 ifeq ($(OS), Darwin)
-LDFLAGS			:=-framework OpenCL -lcairo -lfftw3 -lsndfile -L$(LIB_DIR) -lc++
+LDFLAGS			:=-framework OpenCL -lcairo -lfftw3 -lsndfile -L$(LIB_DIR) -L$(KFR_DIR)/lib -lc++ -framework CoreAudio -framework Foundation -framework AudioToolbox
 else
 LDFLAGS			:=-lOpenCL
 endif
@@ -49,11 +53,26 @@ howl.o: $(HOWL_OBJFILES)
 lib: configure_sndtool sndtool.o zncc.o howl.o
 	ar rcs libhowl.a $(SNDTOOL_OBJFILES) $(HOWL_OBJFILES) $(ZNCC_OBJFILES)
 
-test1:
-	g++ -I./lib -std=c++11 -I$(INCLUDE_RINGSPAN) -I/usr/local/include test/main.cpp libhowl.a $(LDFLAGS) -lsdl2 -o test/howl
+rebuild:
+	rm -rf $(SNDTOOL_DIR)/src/*.o
+	rm -rf lib/*.o
+	rm -rf ./*.a
+	make lib
+
+soundio:
+ifeq (,$(wildcard $(SOUNDIO_DIR)/build/config.h))
+	mkdir -p $(SOUNDIO_DIR)/build
+	cmake -B$(SOUNDIO_DIR)/build -S$(SOUNDIO_DIR)
+	make -C $(SOUNDIO_DIR)/build
+endif
+
+test: soundio
+	$(shell cp $(ZNCC_DIR)/zncc.cl ./test/zncc.cl)
+	g++ -I./lib -I$(SOUNDIO_DIR) -std=c++11 -I$(INCLUDE_RINGSPAN) -I/usr/local/include test/main.cpp libhowl.a $(SOUNDIO_DIR)/build/libsoundio.a $(LDFLAGS) -o test/howl
 
 clean:
-	rm -f $(ZNCC_DIR)/*.o
-	rm -f $(SNDTOOL_DIR)/src/*.o
-	rm -f lib/*.o
-	rm -f ./*.a
+	rm -rf $(SOUNDIO_DIR)/build
+	rm -rf $(ZNCC_DIR)/*.o
+	rm -rf $(SNDTOOL_DIR)/src/*.o
+	rm -rf lib/*.o
+	rm -rf ./*.a
