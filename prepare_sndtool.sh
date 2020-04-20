@@ -4,23 +4,11 @@ CWD_=`pwd`
 
 echo $CWD_
 
-KFR_DIR=./sndfile-tools/kfr
+mkdir ./arrayfire
 
-KFR_BUILD_DIR=$KFR_DIR/build
+wget -c https://arrayfire.s3.amazonaws.com/3.6.4/ArrayFire-v3.6.4_OSX_x86_64.pkg -O ./arrayfire/ArrayFire-OSX.pkg
 
-mkdir -p $KFR_BUILD_DIR/kfrlib
-
-cd $KFR_DIR/build
-
-if [ ! -f "`pwd`/kfr_config.h" ]; then
-
-cmake -G"Unix Makefiles" -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=kfrlib ..
-
-make -j2
-
-make install
-
-fi
+sudo installer -pkg ./arrayfire/ArrayFire-OSX.pkg -target /
 
 cd $CWD_
 

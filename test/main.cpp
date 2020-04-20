@@ -59,12 +59,12 @@ static void overflow_callback(struct SoundIoInStream *instream);
 //
 static void preHowlDetected()
 {
-    fprintf(stdout, "Pre howling detected!\n");
+    fprintf(stdout, "Similar audio detected!\n");
 }
 
 void quitHandler(int dummy)
 {
-    fprintf(stdout, "QUIT!\n");
+    // fprintf(stdout, "QUIT!\n");
     quit = true;
 }
 

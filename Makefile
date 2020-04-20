@@ -14,20 +14,24 @@ SNDTOOL_DIR		:= ./sndfile-tools
 INCLUDE_SNDTOOL := $(SNDTOOL_DIR)/include
 SRC_SNDTOOL		:= $(SNDTOOL_DIR)/src
 
-KFR_DIR			:= $(SNDTOOL_DIR)/kfr/build/kfrlib
-
 ZNCC_DIR		:= ./zncc
 
 SOUNDIO_DIR		:= ./libsoundio
 
+ARRAYFIRE_DIR	:= /opt/arrayfire
+
+INC_ARRAYFIRE	:= $(ARRAYFIRE_DIR)/include
+
+LIB_ARRAYFIRE	:= $(ARRAYFIRE_DIR)/lib
+
 CC				:= cc
-CFLAGS			:= -Wall -I$(INCLUDE_SNDTOOL) -I$(KFR_DIR)/include $(INCLUDES) -I$(SRC_SNDTOOL) -std=c11 -DSPECTROGRAM_LIB
-CXXFLAGS		:= -Wall -I$(INCLUDE_SNDTOOL) -I$(KFR_DIR)/include -I$(ZNCC_DIR) $(INCLUDES) -I. -I$(INCLUDE_RINGSPAN) -O3 -g -std=gnu++11 -pthread -DGPU_SUPPORT -DSPECTROGRAM_LIB
+CFLAGS			:= -Wall -I$(INCLUDE_SNDTOOL) $(INCLUDES) -I$(SRC_SNDTOOL) -std=c11 -DSPECTROGRAM_LIB -I$(INC_ARRAYFIRE)
+CXXFLAGS		:= -Wall -I$(INCLUDE_SNDTOOL) -I$(ZNCC_DIR) $(INCLUDES) -I. -I$(INCLUDE_RINGSPAN) -O3 -g -std=gnu++11 -DGPU_SUPPORT -DSPECTROGRAM_LIB -I$(INC_ARRAYFIRE)
 
 OS				:=$(shell uname)
 
 ifeq ($(OS), Darwin)
-LDFLAGS			:=-framework OpenCL -lcairo -lfftw3 -lsndfile -L$(LIB_DIR) -L$(KFR_DIR)/lib -lc++ -framework CoreAudio -framework Foundation -framework AudioToolbox
+LDFLAGS			:=-framework OpenCL -L$(LIB_DIR) -L$(LIB_ARRAYFIRE) -lc++ -framework CoreAudio -framework Foundation -framework AudioToolbox -lpthread -lafopencl -lcairo -lfftw3 -rpath $(LIB_ARRAYFIRE)
 else
 LDFLAGS			:=-lOpenCL
 endif

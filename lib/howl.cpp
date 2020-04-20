@@ -1,4 +1,5 @@
 #include "howl.h"
+#include "Util.h"
 #include <new>
 #include <utility>
 #include <cstdlib>
@@ -9,8 +10,8 @@
 
 #include <chrono>
 
-#define SPECTROGRAM_WIDTH 500
-#define SPECTROGRAM_HEIGHT 256
+#define SPECTROGRAM_WIDTH 250//500
+#define SPECTROGRAM_HEIGHT 128//256
 #define OVERLAP_PERCENTAGE 50
 #define SILENCE_THRESHOLD 10.0
 #define MAX_SPECTROGRAMS 1
@@ -18,6 +19,9 @@
 // #include <nonstd/ring_span.hpp>
 #include <spectrogram.h>
 #include <zncc.h>
+#include <arrayfire.h>
+#include <cstdlib>
+#include <float.h>
 
 using namespace std;
 
@@ -38,8 +42,6 @@ struct HowlLibContext
     fpPreHowlDetected       _preHowlCb;
     float                   _sourceSilenceMs;
     float                   _captureSilenceMs;
-    // RENDER*                 _sourceRender;
-    // RENDER*                 _captureRender;
     double                  _sourceTriggerRender;
     double                  _captureTriggerRender;
     SpectrogramRenders*     _sourceRender;
@@ -65,6 +67,8 @@ void checkAllRenders(HowlLibContext* ctx);
 static const char* getNextSourceRenderPath();
 
 static const char* getNextCaptureRenderPath();
+
+af::array normalize(af::array a);
 
 HowlLibContext* createHowlLibContext()
 {
@@ -123,14 +127,6 @@ void destroyHowlLibContext(
         delete ctx->_captureRender;
     }
 
-    // deinit_spectrogram(ctx->_sourceRender);
-
-    // delete ctx->_sourceRender;
-
-    // deinit_spectrogram(ctx->_captureRender);
-
-    // delete ctx->_captureRender;
-
     delete ctx;
 }
 
@@ -163,34 +159,12 @@ int initHowlLibContext(
         return -1;
     }
 
-    // if (init_spectrogram(ctx->_sourceRender) != 0)
-    // {
-    //     return -1;
-    // }
-
     ctx->_captureRender = new(std::nothrow) SpectrogramRenders; //new(std::nothrow) RENDER;
 
     if (!ctx->_captureRender)
     {
         return -1;
     }
-
-    // if (init_spectrogram(ctx->_captureRender) != 0)
-    // {
-    //     return -1;
-    // }
-
-    // ctx->_sourceRingBuffer
-    //     = new(std::nothrow) AudioRingBuffer(ctx->_sourceBuffer,
-    //                                         ctx->_sourceBuffer + ctx->_bufferSize,
-    //                                         ctx->_sourceBuffer,
-    //                                         0);
-
-    // ctx->_captureRingBuffer
-    //     = new(std::nothrow) AudioRingBuffer(ctx->_captureBuffer,
-    //                                         ctx->_captureBuffer + ctx->_bufferSize,
-    //                                         ctx->_captureBuffer,
-    //                                         0);
 
     ctx->_sourceRingBuffer = new(std::nothrow) deque<double>();
     ctx->_captureRingBuffer = new(std::nothrow) deque<double>();
@@ -205,6 +179,9 @@ int initHowlLibContext(
     ctx->_preHowlCb = howlPreDetectCallback;
     ctx->_sourceTriggerRender = pow(10, (SILENCE_THRESHOLD / 20.0) );
     ctx->_captureTriggerRender = pow(10, (SILENCE_THRESHOLD / 20.0) );
+
+    af::setDevice(0);
+    af::info();
 
     return 0;
 }
@@ -424,88 +401,95 @@ void addRender(RENDER* render, SpectrogramRenders* spectrograms)
 
 void checkAllRenders(HowlLibContext* ctx)
 {
-
-    unsigned int width = 0, height = 0;
-
-    // Check capture spectrograms against source spectrograms
-    for (int i = 0; i < ctx->_captureRender->size(); ++i)
+    try
     {
 
-        RENDER* captureRender = ctx->_captureRender->at(i);
+        unsigned int width = 0, height = 0;
 
-        for (int j = 0; j < ctx->_sourceRender->size(); ++j)
+        // Check capture spectrograms against source spectrograms
+        for (int i = 0; i < ctx->_captureRender->size(); ++i)
         {
 
-            RENDER* sourceRender = ctx->_sourceRender->at(j);
+            RENDER* captureRender = ctx->_captureRender->at(i);
 
-            long passed = captureRender->time_stamp - sourceRender->time_stamp > 0 ?
-                            captureRender->time_stamp - sourceRender->time_stamp :
-                            sourceRender->time_stamp - captureRender->time_stamp;
-
-            if (passed >= ctx->_bufferMs)
+            for (int j = 0; j < ctx->_sourceRender->size(); ++j)
             {
-                printf("SKIP\n");
-                continue;
+
+                RENDER* sourceRender = ctx->_sourceRender->at(j);
+
+                long passed = captureRender->time_stamp - sourceRender->time_stamp > 0 ?
+                                captureRender->time_stamp - sourceRender->time_stamp :
+                                sourceRender->time_stamp - captureRender->time_stamp;
+
+                if (passed >= ctx->_bufferMs)
+                {
+                    // Skip if spectrograms are too far apart timewise
+                    // printf("SKIP\n");
+                    continue;
+                }
+
+                unsigned int stride = 0;
+
+                unsigned char* sourceBuffer = get_spectrogram_buffer(sourceRender, &width, &height, &stride);
+                unsigned char* captureBuffer = get_spectrogram_buffer(captureRender, &width, &height, &stride);
+
+                af::array img1(width, height, u32);
+                af::array img2(width, height, u32);
+                // maybe
+                // use stride -> lock/unlock
+                // or setup cairo or replace cairo
+                img1.write(sourceBuffer, height * width * 4);
+                img2.write(captureBuffer, height * width * 4);
+
+                af::array result =
+                    matchTemplate(img2, img1, AF_ZSSD);
+
+                af::array disp_norm = normalize(result);
+                // prepare for peaks...
+                // TODO modify peaks and remove this
+                af::array disp_res = 1.0 - disp_norm;
+
+                std::vector<float> v(disp_res.elements());
+                disp_res.host(&v.front());
+                vector<int> idxs;
+
+                findPeaks(v, idxs);
+
+                float avgPeak = 0.0;
+
+                for (int i = 0; i < idxs.size(); ++i)
+                {
+                    avgPeak += v[idxs[i]];
+                }
+
+                avgPeak /= idxs.size();
+
+                bool bMatch = true;
+
+                if (avgPeak >= 0.75)
+                {
+                    bMatch = false;
+                }
+
+                if (bMatch)
+                {
+                    if (ctx->_preHowlCb != NULL)
+                    {
+                        (*ctx->_preHowlCb)();
+                    }
+
+                    fprintf(stdout, "MATCH %f - %s %s!\n", avgPeak, sourceRender->pngfilepath, captureRender->pngfilepath);
+                }
+                else
+                {
+                    // fprintf(stdout, "NOT MATCH %f - %s %s!\n", avgPeak, sourceRender->pngfilepath, captureRender->pngfilepath);
+                }
             }
-
-            unsigned char* sourceBuffer = get_spectrogram_buffer(sourceRender, &width, &height);
-            unsigned char* captureBuffer = get_spectrogram_buffer(captureRender, &width, &height);
-
-            std::vector<BYTE> imgOut;
-            unsigned int widthOut, heightOut;
-
-            // zncc_gpu(captureBuffer,
-            //         sourceBuffer,
-            //         SPECTROGRAM_WIDTH,
-            //         SPECTROGRAM_HEIGHT,
-            //         imgOut,
-            //         widthOut,
-            //         heightOut);
-                    // 256);
-
-            // printf("\n");
-            // int pxcount = 0;
-            // for (int x = 0; x < imgOut.size() / sizeof(int32_t); x += sizeof(int32_t))
-            // {
-
-            //     unsigned char* p = (unsigned char*)&imgOut[x];
-            //     unsigned int r = (unsigned int)p[2];
-            //     unsigned int g = (unsigned int)p[1];
-            //     unsigned int b = (unsigned int)p[0];
-
-            //     // printf("%d %d %d | ",r,g,b);
-
-            //     if (r >= 28 &&
-            //         g >= 28 &&
-            //         b >= 28)
-            //     {
-            //         pxcount++;
-            //         // printf("\rNO echo!!");
-            //     }
-            // }
-
-            // float sc = ((float)pxcount / (float)(imgOut.size() / sizeof(int32_t))) * 100.0;
-
-            // printf("%f\n", sc);
-
-            // printf("\n");
-            // if (imgOut.size())
-            // {
-
-            //     static int c = 0;
-
-            //     static char path[64];
-
-            //     memset(path, 0, sizeof(path));
-
-            //     sprintf(path, "./disp_%d.png", c);
-
-            //     lodepng::encode( path, imgOut.data(), widthOut, heightOut, LCT_GREY, 8U);
-            //     // printf("render %s %s %s: ...\n", captureRender->pngfilepath, sourceRender->pngfilepath, path);
-
-            //     c++;
-            // }
         }
+    }
+    catch(const std::exception& e)
+    {
+        fprintf(stderr, "%s\n", e.what());
     }
 }
 
@@ -537,4 +521,29 @@ static const char* getNextCaptureRenderPath()
     count++;
 
     return path;
+}
+
+// Modified for single loop from arrayfire example
+af::array normalize(af::array a) {
+
+    std::vector<float> hostImg(a.elements());
+    a.host(&hostImg.front());
+
+    float mx = FLT_MIN, mn = FLT_MAX;
+
+    for (int i = 0; i < hostImg.size(); ++i)
+    {
+        float value = hostImg[i];
+        if (value > mx)
+        {
+            mx = value;
+        }
+
+        if (value < mn)
+        {
+            mn = value;
+        }
+    }
+
+    return (a - mn) / (mx - mn);
 }
